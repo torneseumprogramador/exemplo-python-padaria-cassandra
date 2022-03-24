@@ -1,26 +1,25 @@
 
-from pymongo import MongoClient
 from datetime import datetime
 from time import sleep
+from cassandra.cluster import Cluster
+import uuid
 
-client = MongoClient("mongodb://localhost:27017")
-db = client["padaria"]
-
-produtos_collection = db["produtos"]
-padeiros_collection = db["padeiros"]
+cluster = Cluster(['0.0.0.0'],port=9042)
+db = cluster.connect('padaria', wait_for_all_pools=True)
 
 def cadastrarpadeiro():
     padeiro = {}
     padeiro["nome"] = input("\nDigite o nome do padeiro: ")
     while True:
-        ranking = int(input("Insira a avaliação do padeiro, de 1 a 10: "))
-        if ranking in range (1,11):
-            padeiro["ranking"] = ranking
+        rating = int(input("Insira a avaliação do padeiro, de 1 a 10: "))
+        if rating in range (1,11):
+            padeiro["rating"] = rating
             break
         else:
             print("\nValor inválido. Insira um valor de 1 a 10.\n")
             sleep(1)
-    padeiros_collection.insert_one(padeiro)
+    
+    db.execute(f"insert into padeiros(id, nome, rating)values({uuid.uuid4()}, '{padeiro['nome']}', {padeiro['rating']});")
 
 def cadastrarproduto():
     produto = {}
@@ -30,15 +29,15 @@ def cadastrarproduto():
         data = input("Digite a data de validade do produto no formato dd/mm/aaaa: ")
         data = data.split("/")
         try:
-            produto["data_validade"] = datetime(int(data[2]), int(data[1]), int(data[0]))
+            produto["data_validade"] = f"{data[2]}-{data[1]}-{data[0]}"
             break
         except:
             print("\nData inválida!\n")
             sleep(1)
     while True:
-        ranking = int(input("Insira a avaliação do produto, de 1 a 10: "))
-        if ranking in range (1,11):
-            produto["ranking"] = ranking
+        rating = int(input("Insira a avaliação do produto, de 1 a 10: "))
+        if rating in range (1,11):
+            produto["rating"] = rating
             break
         else:
             print("\nValor inválido!\n")
@@ -46,48 +45,53 @@ def cadastrarproduto():
     while True:
         padeiro = input("Digite o nome do padeiro que o produziu: ")
         try:
-            padeiro_doc = padeiros_collection.find_one({"nome": padeiro}) 
-            produto["padeiro_id"] = padeiro_doc["_id"]
+            print(f"select * from padeiros where nome = '{padeiro}'")
+            padeiro_doc = db.execute(f"select * from padeiros where nome = '{padeiro}'").one()
+            produto["padeiro_id"] = padeiro_doc.id
             break
         except:
             print("\nNome de padeiro inválido!\n")
             sleep(1)  
-    produtos_collection.insert_one(produto)
+            
+    db.execute(f"insert into produtos(id, nome, rating, padeiro_id, data_validade, descricao)values({uuid.uuid4()}, '{produto['nome']}', {produto['rating']}, {produto['padeiro_id']}, '{produto['data_validade']}', '{produto['descricao']}');")
 
 
 def listarpadeiros():
-    if padeiros_collection.find_one() == None:
+    qtd_padeiros = db.execute(f"select count(1) as qtd from padeiros").one()
+
+    if qtd_padeiros.qtd == 0:
         print("\nNão há padeiros cadastrados!\n")
         sleep(1)
     else:
-        print("\nRanking dos padeiros:\n")
-        for doc in padeiros_collection.find().sort('ranking', -1):
-            print(f"Nome: {doc['nome']}")
-            print(f"Ranking: {doc['ranking']}")
+        print("\nrating dos padeiros:\n")
+        for doc in db.execute(f"select * from padeiros"):
+            print(f"Nome: {doc.nome}")
+            print(f"Rating: {doc.rating}")
             print("-----------------")
 
 
 def listarprodutos():
-    if produtos_collection.find_one() == None:
+    qtd_produtos = db.execute(f"select count(1) as qtd from produtos").one()
+    if qtd_produtos.qtd == 0:
         print("\nNão há produtos cadastrados!\n")
         sleep(1)
     else:
-        print("\nRanking dos produtos:\n")
-        for doc in produtos_collection.find().sort('ranking', -1):
-            padeiro_doc = padeiros_collection.find_one(doc['padeiro_id'])
-            print(f"Nome: {doc['nome']}")
-            print(f"Descrição: {doc['descricao']}")            
-            print(f"Data de Validade: {doc['data_validade'].strftime('%d/%m/%y')}")
-            print(f"Ranking: {doc['ranking']}")
-            print(f"Padeiro: {padeiro_doc['nome']}")
+        print("\nrating dos produtos:\n")
+        for doc in db.execute(f"select * from produtos"):
+            padeiro_doc = db.execute(f"select * from padeiros where id = {doc.padeiro_id}").one()
+            print(f"Nome: {doc.nome}")
+            print(f"Descrição: {doc.descricao}")            
+            print(f"Data de Validade: {doc.data_validade}")
+            print(f"Rating: {doc.rating}")
+            print(f"Padeiro: {padeiro_doc.nome}")
             print("-----------------")    
 
 while True:
     print("\nO que você deseja fazer?")
     print("1 - Cadastrar produto")
     print("2 - Cadastrar padeiro")
-    print("3 - Listar ranking dos padeiros")
-    print("4 - Listar ranking dos produtos")
+    print("3 - Listar rating dos padeiros")
+    print("4 - Listar rating dos produtos")
     print("5 - Sair\n")
 
     opcao = int(input())
